@@ -1,6 +1,10 @@
-# INTEGRANTES
-- Juan David Serna Quilindo
+# INTEGRANTES:
+- Juan David Serna
 - David Santiago Davila
-- Daniel Garcia Aceve
+- Daniel Garcia
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-# npm run dev
+Currently, two official plugins are available:
+
+= @vitejs/plugin-react uses Babel for Fast Refresh
+- @vitejs/plugin-react-swc uses SWC for Fast Refresh
