@@ -57,7 +57,7 @@ function Projectile({ position, direction, onHitEnemy }) {
               Math.random() * 10,
               (Math.random() - 0.5) * 5
             ),
-            createdAt: Date.now() 
+            createdAt: Date.now()
           }));
 
           setParticlePositions(initialParticles);
@@ -79,7 +79,7 @@ function Projectile({ position, direction, onHitEnemy }) {
     if (exploded) {
       const currentTime = Date.now();
       const updatedParticles = particlePositions
-        .filter(particle => currentTime - particle.createdAt < 1000) 
+        .filter(particle => currentTime - particle.createdAt < 1000)
         .map(particle => {
           particle.velocity.y -= 9.8 * delta;
           particle.position.add(particle.velocity.clone().multiplyScalar(delta));
@@ -135,6 +135,18 @@ function Enemy({ enemy, onPlayerHit }) {
   useFrame((state, delta) => {
     if (!meshRef.current) return;
 
+    const flattenedDirection = new THREE.Vector3(
+      camera.position.x, 
+      0,
+      camera.position.z
+    ).normalize();
+
+    const enemyFlattenedPosition = new THREE.Vector3(
+      enemy.position.x,
+      0,
+      enemy.position.z
+    );
+
     const directionToPlayer = new THREE.Vector3()
       .subVectors(camera.position, enemy.position)
       .normalize();
@@ -152,8 +164,8 @@ function Enemy({ enemy, onPlayerHit }) {
 
     const distanceToPlayer = enemy.position.distanceTo(camera.position);
     if (distanceToPlayer < 5 && !hasHit) {
-      setHasHit(true); 
-      onPlayerHit();  
+      setHasHit(true);
+      onPlayerHit();
     } else if (distanceToPlayer >= 5 && hasHit) {
       setHasHit(false);
     }
@@ -167,8 +179,7 @@ function Enemy({ enemy, onPlayerHit }) {
   );
 }
 
-
-function GameManager() {
+function GameManager({ initialGameState, onGameStateUpdate }) {
   const [playShootSound] = useSound('/sounds/shoot.mp3', { volume: 0.5 });
   const [playEnemyHitSound] = useSound('/sounds/enemy-hit.mp3', { volume: 0.5 });
   const [playPlayerHitSound] = useSound('/sounds/player-hit.mp3', { volume: 0.5 });
@@ -194,9 +205,16 @@ function GameManager() {
     KeyD: false
   });
 
+  const updateGameState = (newState) => {
+    setGameState(prev => {
+      const updatedState = { ...prev, ...newState };
+      onGameStateUpdate(updatedState);
+      return updatedState;
+    });
+  };
+
   useEffect(() => {
     playBackgroundSound();
-
   }, []);
 
   useEffect(() => {
@@ -222,17 +240,22 @@ function GameManager() {
     const moveSpeed = 10;
     const moveDirection = new THREE.Vector3();
     camera.getWorldDirection(moveDirection);
-    moveDirection.y = 0;
-    moveDirection.normalize();
+    
+    const flattenedDirection = new THREE.Vector3(
+      moveDirection.x, 
+      0,
+      moveDirection.z
+    ).normalize();
 
     const rightVector = new THREE.Vector3()
-      .crossVectors(moveDirection, new THREE.Vector3(0, 1, 0));
+      .crossVectors(flattenedDirection, new THREE.Vector3(0, 1, 0))
+      .normalize();
 
     if (keysPressed.current.KeyW) {
-      camera.position.add(moveDirection.clone().multiplyScalar(moveSpeed * delta));
+      camera.position.add(flattenedDirection.clone().multiplyScalar(moveSpeed * delta));
     }
     if (keysPressed.current.KeyS) {
-      camera.position.sub(moveDirection.clone().multiplyScalar(moveSpeed * delta));
+      camera.position.sub(flattenedDirection.clone().multiplyScalar(moveSpeed * delta));
     }
     if (keysPressed.current.KeyA) {
       camera.position.sub(rightVector.clone().multiplyScalar(moveSpeed * delta));
@@ -264,40 +287,35 @@ function GameManager() {
     setEnemies(newEnemies);
     window.enemies = newEnemies;
 
-    setGameState(prev => ({
-      ...prev,
-      score: prev.score + 1
-    }));
+    updateGameState({
+      score: gameState.score + 1
+    });
 
     if (newEnemies.length === 0) {
       playWaveCompleteSound();
       setTimeout(() => {
-        setGameState((prev) => ({
-          ...prev,
-          Oleada: prev.Oleada + 1,
-        }));
+        updateGameState({
+          Oleada: gameState.Oleada + 1,
+        });
       }, 500);
     }
   };
 
   const handlePlayerHit = () => {
     playPlayerHitSound();
-    setGameState(prev => {
-      const newHealth = prev.health - 1;
 
-      return {
-        ...prev,
-        health: newHealth,
-        gameOver: newHealth <= 0
-      };
+    if (gameState.health === 1) {
+      playGameOverSound();
+    }
+
+    updateGameState({
+      health: gameState.health - 1,
+      gameOver: gameState.health <= 1
     });
   };
 
-
   const restartGame = () => {
-    playGameOverSound();
-
-    setGameState({
+    updateGameState({
       Oleada: 1,
       score: 0,
       health: 3,
@@ -425,24 +443,90 @@ function GameHUD({ Oleada, score, health, gameOver, restartGame }) {
   );
 }
 
-export default function App() {
+const GameHUD2D = ({ Oleada, score, health }) => {
   return (
-    <Canvas shadows camera={{ position: [0, 5, 10], fov: 50 }}>
-      <PointerLockControls />
-      <ambientLight intensity={0.5} />
-      <Sky />
-      <spotLight position={[10, 15, 10]} angle={0.3} castShadow />
-      <Stars
-        radius={100}
-        depth={50}
-        count={5000}
-        factor={4}
-        saturation={0}
+    <div style={{
+      position: 'absolute',
+      fontSize: 24,
+      top: '10px',
+      left: '10px',
+      color: 'white',
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      padding: '10px',
+      borderRadius: '5px',
+      zIndex: 1000
+    }}>
+      <div>🪓 Oleada: {Oleada}</div>
+      <div>🏹 Score: {score}</div>
+      <div>❤️ Vidas: {health < 0 ? 0 : health}</div>
+    </div>
+  );
+};
+
+const CenterDot = () => (
+  <div style={{
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: '10px',
+    height: '10px',
+    borderRadius: '50%',
+    backgroundColor: 'red',
+    zIndex: 1000
+  }} />
+);  
+
+
+export default function App() {
+  const [gameState, setGameState] = useState({
+    Oleada: 1,
+    score: 0,
+    health: 3,
+    gameOver: false
+  });
+
+  const handleGameStateUpdate = (newState) => {
+    setGameState(prevState => ({
+      ...prevState,
+      ...newState
+    }));
+  };
+
+  return (
+    <>
+      <CenterDot />
+      <GameHUD2D
+        Oleada={gameState.Oleada}
+        score={gameState.score}
+        health={gameState.health}
       />
-      <Physics gravity={[0, 0, 0]}>
-        <Plane />
-        <GameManager />
-      </Physics>
-    </Canvas>
+      <Canvas shadows camera={{ position: [0, 5, 10], fov: 50 }}>
+        <PointerLockControls />
+        <ambientLight intensity={0.5} />
+        <Sky
+          distance={450000}
+          sunPosition={[0, -1, 0]}
+          inclination={0}
+          azimuth={0.25}
+        />
+        <spotLight position={[10, 15, 10]} angle={0.3} castShadow intensity={0.5} />
+
+        <Stars
+          radius={100}
+          depth={50}
+          count={5000}
+          factor={4}
+          saturation={0}
+        />
+        <Physics gravity={[0, 0, 0]}>
+          <Plane /> 
+          <GameManager
+            initialGameState={gameState}
+            onGameStateUpdate={handleGameStateUpdate}
+          />
+        </Physics>
+      </Canvas>
+    </>
   );
 }
