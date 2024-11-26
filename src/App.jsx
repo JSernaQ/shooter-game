@@ -5,56 +5,6 @@ import { PointerLockControls, Text, Sky } from '@react-three/drei';
 import * as THREE from 'three';
 import './styles.css';
 
-function Particles({ position }) {
-  const [particles, setParticles] = useState(
-    Array.from({ length: 10 }, () => ({
-      id: Math.random(),
-      position: [
-        position[0] + (Math.random() - 0.5),
-        position[1] + (Math.random() - 0.5),
-        position[2] + (Math.random() - 0.5)
-      ],
-      velocity: [
-        (Math.random() - 0.5) * 5,
-        (Math.random() - 0.5) * 5,
-        (Math.random() - 0.5) * 5
-      ],
-      lifetime: 1
-    }))
-  );
-
-  useFrame(() => {
-    setParticles(currentParticles =>
-      currentParticles
-        .map(particle => ({
-          ...particle,
-          position: [
-            particle.position[0] + particle.velocity[0] * 0.1,
-            particle.position[1] + particle.velocity[1] * 0.1,
-            particle.position[2] + particle.velocity[2] * 0.1
-          ],
-          lifetime: particle.lifetime - 0.05
-        }))
-        .filter(particle => particle.lifetime > 0)
-    );
-  });
-
-  return (
-    <>
-      {particles.map(particle => (
-        <mesh
-          key={particle.id}
-          position={particle.position}
-          scale={[0.1, 0.1, 0.1]}
-        >
-          <boxGeometry />
-          <meshStandardMaterial color="red" />
-        </mesh>
-      ))}
-    </>
-  );
-}
-
 function Plane() {
   const [ref] = usePlane(() => ({
     rotation: [-Math.PI / 2, 0, 0],
@@ -68,8 +18,8 @@ function Plane() {
   );
 }
 
-function Projectile({ position, direction, onProjectileHit }) {
-  const speed = 100;
+function Projectile({ position, direction }) {
+  const speed = 200;
   const [ref, api] = useSphere(() => ({
     mass: 0.1,
     position,
@@ -78,28 +28,22 @@ function Projectile({ position, direction, onProjectileHit }) {
 
   useEffect(() => {
     api.velocity.set(
-      direction[0] * speed,
-      direction[1] * speed,
+      direction[0] * speed, 
+      direction[1] * speed, 
       direction[2] * speed
     );
-  }, [direction, api]);
 
-  useFrame(() => {
-    // Chequeamos la distancia con los enemigos directamente
-    enemies.forEach(enemy => {
-      const projPos = new THREE.Vector3(position[0], position[1], position[2]);
-      const enemyPos = new THREE.Vector3(enemy.position[0], enemy.position[1], enemy.position[2]);
-      const distance = projPos.distanceTo(enemyPos);
-      if (distance < 1) {
-        onProjectileHit(enemy.id);
-      }
-    });
-  });
+    const timer = setTimeout(() => {
+      api.position.set(1000, 1000, 1000);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <mesh ref={ref}>
       <sphereGeometry args={[0.1, 16, 16]} />
-      <meshStandardMaterial color="red" />
+      <meshStandardMaterial color="yellow" />
     </mesh>
   );
 }
@@ -117,27 +61,26 @@ function Enemy({ position, speed, onHit }) {
     const enemyPos = ref.current.position;
     const playerPos = camera.position;
 
+    // Dirección hacia el jugador
     const direction = new THREE.Vector3(
       playerPos.x - enemyPos.x,
       0,
       playerPos.z - enemyPos.z
     ).normalize();
 
+    // Mover hacia el jugador
     api.velocity.set(
-      direction.x * speed,
-      0,
+      direction.x * speed, 
+      0, 
       direction.z * speed
     );
-
-    // Chequeamos la distancia con el jugador
-    const distance = new THREE.Vector3().subVectors(camera.position, ref.current.position).length();
-    if (distance < 1) {
-      onHit();
-    }
   });
 
   return (
-    <mesh ref={ref}>
+    <mesh ref={ref} onPointerDown={(e) => {
+      e.stopPropagation();
+      onHit();
+    }}>
       <boxGeometry args={[1, 1, 1]} />
       <meshStandardMaterial color="green" />
     </mesh>
@@ -154,9 +97,8 @@ function Player() {
 
   const [projectiles, setProjectiles] = useState([]);
   const [enemies, setEnemies] = useState([]);
-  const [score, setScore] = useState(0);
-  const [playerHealth, setPlayerHealth] = useState(100);
   const [wave, setWave] = useState(1);
+  const [score, setScore] = useState(0);
 
   const { camera } = useThree();
   const keys = useRef({
@@ -166,17 +108,20 @@ function Player() {
     right: false,
   });
 
+  // Generar enemigos en oleadas
   useEffect(() => {
+    // Limpiar enemigos anteriores
     setEnemies([]);
 
+    // Generar nueva oleada
     const newEnemies = Array.from({ length: wave }, (_, index) => ({
       id: Date.now() + index,
       position: [
-        Math.random() * 40 - 20,
-        1,
+        Math.random() * 40 - 20, 
+        1, 
         Math.random() * 40 - 20
       ],
-      speed: 1 + (wave * 0.1)
+      speed: 2 + (wave * 0.5) // Aumentar velocidad con cada oleada
     }));
 
     setEnemies(newEnemies);
@@ -256,72 +201,66 @@ function Player() {
     });
   });
 
-  const handleProjectileHit = (enemyId) => {
-    setProjectiles(prev => prev.filter(p => p.id !== enemyId));
+  // Lógica de eliminación de enemigos
+  const handleEnemyHit = (enemyId) => {
     setEnemies(prev => prev.filter(enemy => enemy.id !== enemyId));
     setScore(prev => prev + 1);
-  };
 
-  const handleEnemyHit = () => {
-    setPlayerHealth(prev => Math.max(prev - 10, 0));
-    if (playerHealth <= 0) {
-      alert('Game Over');
+    // Si se eliminan todos los enemigos, pasar a la siguiente oleada
+    if (enemies.length === 1) {
+      setWave(prev => prev + 1);
     }
   };
 
   return (
     <>
-      <PointerLockControls />
+      <mesh ref={ref} rotation={[0, 0, 0]}>
+        <boxGeometry args={[1, 1, 1]} />
+        <meshStandardMaterial color="black" />
+      </mesh>
+
+      {/* HUD */}
       <Text
-        position={[-5, 5, 0]}
-        fontSize={1}
+        position={[0, 3, -5]}
         color="white"
+        anchorX="center"
+        anchorY="middle"
+        fontSize={0.5}
       >
-        Score: {score}
-      </Text>
-      <Text
-        position={[-5, 4, 0]}
-        fontSize={1}
-        color="white"
-      >
-        Health: {playerHealth}
+        Wave: {wave} | Score: {score}
       </Text>
 
-      <Particles position={[0, 2, 0]} />
-
-      {projectiles.map((proj) => (
-        <Projectile
-          key={proj.id}
-          position={proj.position}
-          direction={proj.direction}
-          onProjectileHit={handleProjectileHit}
+      {projectiles.map(proj => (
+        <Projectile 
+          key={proj.id} 
+          position={proj.position} 
+          direction={proj.direction} 
         />
       ))}
 
-      {enemies.map((enemy) => (
-        <Enemy
-          key={enemy.id}
-          position={enemy.position}
+      {enemies.map(enemy => (
+        <Enemy 
+          key={enemy.id} 
+          position={enemy.position} 
           speed={enemy.speed}
-          onHit={handleEnemyHit}
+          onHit={() => handleEnemyHit(enemy.id)}
         />
       ))}
     </>
   );
 }
 
-function Game() {
+export default function App() {
   return (
     <Canvas shadows camera={{ position: [0, 5, 10], fov: 50 }}>
-      <Sky sunPosition={[100, 100, 100]} />
+      <PointerLockControls />
       <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 10, 10]} castShadow />
-      <Physics>
+      <spotLight position={[10, 15, 10]} angle={0.3} castShadow />
+      <Sky sunPosition={[100, 10, 100]} />
+      <Physics gravity={[0, 0, 0]}>
         <Plane />
         <Player />
       </Physics>
     </Canvas>
   );
 }
-
-export default Game;
