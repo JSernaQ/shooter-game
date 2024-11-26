@@ -20,9 +20,11 @@ function Plane() {
 }
 
 function Projectile({ position, direction, onHitEnemy }) {
-  const speed = 280;
+  const speed = 340;
   const [projectile, setProjectile] = useState(new THREE.Vector3(...position));
   const [active, setActive] = useState(true);
+  const [exploded, setExploded] = useState(false);
+  const [particlePositions, setParticlePositions] = useState([]);
 
   useEffect(() => {
     if (!active) return;
@@ -41,6 +43,24 @@ function Projectile({ position, direction, onHitEnemy }) {
         const distance = newPosition.distanceTo(enemy.position);
         if (distance < 2) {
           setActive(false);
+          setExploded(true);
+
+          const initialParticles = Array.from({ length: 50 }, () => ({
+            id: Math.random().toString(),
+            position: new THREE.Vector3(
+              newPosition.x + (Math.random() - 0.5) * 2,
+              newPosition.y + (Math.random() - 0.5) * 2,
+              newPosition.z + (Math.random() - 0.5) * 2
+            ),
+            velocity: new THREE.Vector3(
+              (Math.random() - 0.5) * 5,
+              Math.random() * 10,
+              (Math.random() - 0.5) * 5
+            ),
+            createdAt: Date.now() 
+          }));
+
+          setParticlePositions(initialParticles);
           onHitEnemy(index);
         }
       });
@@ -55,7 +75,49 @@ function Projectile({ position, direction, onHitEnemy }) {
     };
   }, [active, projectile]);
 
-  if (!active) return null;
+  useFrame((state, delta) => {
+    if (exploded) {
+      const currentTime = Date.now();
+      const updatedParticles = particlePositions
+        .filter(particle => currentTime - particle.createdAt < 1000) 
+        .map(particle => {
+          particle.velocity.y -= 9.8 * delta;
+          particle.position.add(particle.velocity.clone().multiplyScalar(delta));
+          return particle;
+        });
+
+      setParticlePositions(updatedParticles);
+
+      if (updatedParticles.length === 0) {
+        setExploded(false);
+      }
+    }
+  });
+
+  if (!active && !exploded) return null;
+
+  if (exploded) {
+    return (
+      <points>
+        {particlePositions.map((particle) => (
+          <points
+            key={particle.id}
+            position={[particle.position.x, particle.position.y, particle.position.z]}
+          >
+            <pointsMaterial attach="material" color="red" size={0.2} sizeAttenuation />
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                count={1}
+                array={new Float32Array([0, 0, 0])}
+                itemSize={3}
+              />
+            </bufferGeometry>
+          </points>
+        ))}
+      </points>
+    );
+  }
 
   return (
     <mesh position={[projectile.x, projectile.y, projectile.z]}>
@@ -68,7 +130,7 @@ function Projectile({ position, direction, onHitEnemy }) {
 function Enemy({ enemy, onPlayerHit }) {
   const meshRef = useRef();
   const { camera } = useThree();
-  const [hasHit, setHasHit] = useState(false); // Nuevo estado para controlar si ya ha sido golpeado
+  const [hasHit, setHasHit] = useState(false);
 
   useFrame((state, delta) => {
     if (!meshRef.current) return;
@@ -89,10 +151,10 @@ function Enemy({ enemy, onPlayerHit }) {
     meshRef.current.position.copy(newPosition);
 
     const distanceToPlayer = enemy.position.distanceTo(camera.position);
-    if (distanceToPlayer < 5 && !hasHit) { // Verificamos que no se haya golpeado previamente
-      setHasHit(true); // Marcamos que ha habido un golpe
-      onPlayerHit();  // Llamamos a la función que reproduce el sonido
-    } else if (distanceToPlayer >= 5 && hasHit) { // Si la distancia aumenta, resetear el estado
+    if (distanceToPlayer < 5 && !hasHit) {
+      setHasHit(true); 
+      onPlayerHit();  
+    } else if (distanceToPlayer >= 5 && hasHit) {
       setHasHit(false);
     }
   });
@@ -222,6 +284,7 @@ function GameManager() {
     playPlayerHitSound();
     setGameState(prev => {
       const newHealth = prev.health - 1;
+
       return {
         ...prev,
         health: newHealth,
@@ -229,7 +292,7 @@ function GameManager() {
       };
     });
   };
-  
+
 
   const restartGame = () => {
     playGameOverSound();
