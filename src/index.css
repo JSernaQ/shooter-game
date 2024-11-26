@@ -1,0 +1,11 @@
+.crosshair {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 50px;
+    color: white;
+    pointer-events: none;  /* Asegura que no interfiera con otros eventos */
+    user-select: none;     /* Prevenir que se seleccione el texto */
+  }
+  

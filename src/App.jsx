@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Physics, usePlane } from '@react-three/cannon';
 import { Text, PointerLockControls, Sky, Stars } from '@react-three/drei';
+import useSound from 'use-sound';
 import * as THREE from 'three';
 import './styles.css';
 
@@ -19,7 +20,7 @@ function Plane() {
 }
 
 function Projectile({ position, direction, onHitEnemy }) {
-  const speed = 200;
+  const speed = 280;
   const [projectile, setProjectile] = useState(new THREE.Vector3(...position));
   const [active, setActive] = useState(true);
 
@@ -36,10 +37,9 @@ function Projectile({ position, direction, onHitEnemy }) {
       const newPosition = projectile.clone().add(moveVector);
       setProjectile(newPosition);
 
-      // Verificar colisión con enemigos
       window.enemies.forEach((enemy, index) => {
         const distance = newPosition.distanceTo(enemy.position);
-        if (distance < 2) {  // Aumenté el radio de colisión
+        if (distance < 2) {
           setActive(false);
           onHitEnemy(index);
         }
@@ -66,32 +66,54 @@ function Projectile({ position, direction, onHitEnemy }) {
 }
 
 function Enemy({ enemy, onPlayerHit }) {
+  const meshRef = useRef();
   const { camera } = useThree();
+  const [hasHit, setHasHit] = useState(false); // Nuevo estado para controlar si ya ha sido golpeado
 
   useFrame((state, delta) => {
+    if (!meshRef.current) return;
+
     const directionToPlayer = new THREE.Vector3()
       .subVectors(camera.position, enemy.position)
       .normalize();
 
-    enemy.position.add(
+    const newPosition = enemy.position.clone();
+    newPosition.y = 1;
+
+    newPosition.add(
       directionToPlayer.multiplyScalar(enemy.speed * delta)
     );
 
+    enemy.position.copy(newPosition);
+
+    meshRef.current.position.copy(newPosition);
+
     const distanceToPlayer = enemy.position.distanceTo(camera.position);
-    if (distanceToPlayer < 2) {
-      onPlayerHit();
+    if (distanceToPlayer < 5 && !hasHit) { // Verificamos que no se haya golpeado previamente
+      setHasHit(true); // Marcamos que ha habido un golpe
+      onPlayerHit();  // Llamamos a la función que reproduce el sonido
+    } else if (distanceToPlayer >= 5 && hasHit) { // Si la distancia aumenta, resetear el estado
+      setHasHit(false);
     }
   });
 
   return (
-    <mesh position={[enemy.position.x, enemy.position.y, enemy.position.z]}>
+    <mesh ref={meshRef} position={[enemy.position.x, 1, enemy.position.z]}>
       <boxGeometry args={[2, 2, 2]} />
-      <meshStandardMaterial color="red" />
+      <meshStandardMaterial color="green" />
     </mesh>
   );
 }
 
+
 function GameManager() {
+  const [playShootSound] = useSound('/sounds/shoot.mp3', { volume: 0.5 });
+  const [playEnemyHitSound] = useSound('/sounds/enemy-hit.mp3', { volume: 0.5 });
+  const [playPlayerHitSound] = useSound('/sounds/player-hit.mp3', { volume: 0.5 });
+  const [playBackgroundSound] = useSound('/sounds/background.mp3', { volume: 0.1, loop: true });
+  const [playWaveCompleteSound] = useSound('/sounds/wave-complete.mp3', { volume: 0.5 });
+  const [playGameOverSound] = useSound('/sounds/game-over.mp3', { volume: 0.5 });
+
   const [gameState, setGameState] = useState({
     Oleada: 1,
     score: 0,
@@ -111,23 +133,27 @@ function GameManager() {
   });
 
   useEffect(() => {
+    playBackgroundSound();
+
+  }, []);
+
+  useEffect(() => {
     if (enemies.length === 0 && !gameState.gameOver) {
       const newEnemies = Array.from({ length: gameState.Oleada * 3 }, () => ({
         id: Math.random().toString(),
         position: new THREE.Vector3(
           Math.random() * 80 - 40,
-          1,  // Se mantiene a nivel del suelo
+          1,
           Math.random() * 80 - 40
         ),
         speed: 2 + gameState.Oleada * 0.5,
       }));
 
       setEnemies(newEnemies);
-      window.enemies = newEnemies;  // Mantener referencia global
+      window.enemies = newEnemies;
     }
   }, [gameState.Oleada, enemies.length, gameState.gameOver]);
 
-  // Control de movimiento del jugador
   useFrame((state, delta) => {
     if (gameState.gameOver) return;
 
@@ -165,9 +191,13 @@ function GameManager() {
       position: [camera.position.x, camera.position.y, camera.position.z],
       direction: [direction.x, direction.y, direction.z]
     }]);
+
+    playShootSound();
   };
 
   const handleEnemyHit = (index) => {
+    playEnemyHitSound();
+
     const newEnemies = enemies.filter((_, i) => i !== index);
     setEnemies(newEnemies);
     window.enemies = newEnemies;
@@ -178,6 +208,7 @@ function GameManager() {
     }));
 
     if (newEnemies.length === 0) {
+      playWaveCompleteSound();
       setTimeout(() => {
         setGameState((prev) => ({
           ...prev,
@@ -188,6 +219,7 @@ function GameManager() {
   };
 
   const handlePlayerHit = () => {
+    playPlayerHitSound();
     setGameState(prev => {
       const newHealth = prev.health - 1;
       return {
@@ -197,8 +229,11 @@ function GameManager() {
       };
     });
   };
+  
 
   const restartGame = () => {
+    playGameOverSound();
+
     setGameState({
       Oleada: 1,
       score: 0,
@@ -269,17 +304,16 @@ function GameManager() {
 }
 
 function GameHUD({ Oleada, score, health, gameOver, restartGame }) {
-  
   const safeHealth = Math.max(0, health);
 
   return (
     <group>
       <Text
-        position={[-5, 3, -10]}
+        position={[-5, 3.5, -10]}
         color="white"
         anchorX="left"
         anchorY="middle"
-        fontSize={0.5}
+        fontSize={1}
       >
         {`Oleada: ${Oleada}`}
       </Text>
@@ -333,6 +367,7 @@ export default function App() {
     <Canvas shadows camera={{ position: [0, 5, 10], fov: 50 }}>
       <PointerLockControls />
       <ambientLight intensity={0.5} />
+      <Sky />
       <spotLight position={[10, 15, 10]} angle={0.3} castShadow />
       <Stars
         radius={100}
