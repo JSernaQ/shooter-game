@@ -1,4 +1,8 @@
-# React + Vite
+# INTEGRANTES:
+
+- Juan David Serna
+- David Santiago Davila
+- Daniel Garcia
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
